@@ -1,0 +1,9 @@
+# Environments
+.vscode/
+.direnv/
+
+# Web driver
+webdriver/
+
+# Crawled data
+crawled_data/
