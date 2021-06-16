@@ -1,70 +1,105 @@
-from selenium import webdriver
-from bs4 import BeautifulSoup
-import pandas as pd
 import time
 import os
+from pathlib import Path
+import traceback
+import pprint
+
+from selenium import webdriver
+import selenium.common.exceptions as SeleniumExceptions
+from bs4 import BeautifulSoup
+
 
 BASE_URL = "https://www.wanted.co.kr/wdlist/518"
-DUMP_FILE_PATH = "crawled_data/wanted.html"
-CSV_FILE_PATH = "crawled_data/company_list.csv"
+BASE_DATA_PATH = Path("crawled_data")
+DRIVER_PATH = Path('./webdriver/chromedriver')
+CATEGORY_BUTTON_CLASS = "_3SgvgiuDypnw8sSW2Pxngs"
+PAUSE_TIME = 3
 
-SCROLL_PAUSE_TIME = 3
 
-
-def web_driver_options():
+def get_driver(driver_path: Path = DRIVER_PATH):
     options = webdriver.ChromeOptions()
-    options.add_argument('window-size=1920x1080')
-    options.add_argument('disable-gpu')
-    options.add_argument('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_2) AppleWebKit/537.36 '
-                         '(KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36')
-    return options
+    return webdriver.Chrome(driver_path.absolute(), options=options)
 
-def scroll_and_dump_html():
-    driver = webdriver.Chrome('./webdriver/chromedriver', options=web_driver_options())
-    driver.get(BASE_URL)
 
-    # Get scroll height
+def parse(html: str):
+    soup = BeautifulSoup(html, 'html.parser')
+    positions = soup.find_all('div', {'class': 'body'})
+    yield from (
+        {
+            "location": position.find('div', {'class': 'job-card-company-location'}).text,
+            "company": position.find('div', {'class': 'job-card-company-name'}).text,
+            "title": position.find('div', {'class': 'job-card-position'}).text
+        } for position in positions
+    )
+
+
+def subcrawl(driver: webdriver.Chrome) -> str:
     page_height = driver.execute_script("return document.body.scrollHeight")
     while True:
-        # Scroll down to bottom
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        # Wait to load page
-        time.sleep(SCROLL_PAUSE_TIME)
-        # Calculate new scroll height and compare with last scroll height
-        page_height_scrolled = driver.execute_script("return document.body.scrollHeight")
+        driver.execute_script(
+            "window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(PAUSE_TIME)
+        page_height_scrolled = driver.execute_script(
+            "return document.body.scrollHeight")
         if page_height == page_height_scrolled:
             break
         page_height = page_height_scrolled
-
-    html = driver.page_source
-    driver.quit()
-    with open(DUMP_FILE_PATH, 'w+') as dumpfile:
-        dumpfile.write(html)
+    return driver.page_source
 
 
-def parse():
-    html = open(DUMP_FILE_PATH, 'r').read()
-    soup = BeautifulSoup(html, 'html.parser')
+def click_category_button(driver: webdriver.Chrome, button_index: int) -> str:
+    while True:
+        try:
+            buttons = driver.find_elements_by_class_name(CATEGORY_BUTTON_CLASS)
+            category = buttons[button_index].text
+            buttons[button_index].click()
+        except (SeleniumExceptions.ElementClickInterceptedException, SeleniumExceptions.ElementNotInteractableException):
+            right_button = driver.find_element_by_xpath(
+                '//*[@id="__next"]/div/div[3]/div[1]/div/div/button[2]/i')
+            right_button.click()
+            time.sleep(PAUSE_TIME)
+        else:
+            return category
 
-    positions = soup.find_all('div', {'class': 'body'})
-    position_titles = [row.find('div', {'class': 'job-card-position'}).text for row in positions]
-    company_names = [row.find('div', {'class': 'job-card-company-name'}).text for row in positions]
-    locations = [row.find('div', {'class': 'job-card-company-location'}).text for row in positions]
-    
-    positions_with_good_response_rate = list(filter(lambda position: '응답률' in str(position), positions))
-    company_names_with_good_response_rate = set([row.find('div', {'class': 'job-card-company-name'}).text for row in positions_with_good_response_rate])
 
-    df = pd.DataFrame({
-        'position_title': position_titles,
-        'company_name': company_names,
-        'location': locations,
-    })
-    df['good_response_rate'] = df['company_name'].isin(company_names_with_good_response_rate)
-    df.to_csv(CSV_FILE_PATH, index=False)
+def crawl_and_save(do_all: bool = True):
+    driver = get_driver()
+    button_index = 0
+    information = {}
 
-    print('찾은 포지션 수:', len(position_titles))
-    print('찾은 회사 수:', len(set(company_names)))
+    try:
+        # Whole positions
+        if do_all:
+            driver.get(BASE_URL)
+            time.sleep(PAUSE_TIME)
+            information["All"] = parse(subcrawl(driver))
 
-if __name__ == '__main__':
-    scroll_and_dump_html()
-    parse()
+        # Sub categories
+        while True:
+            driver.get(BASE_URL)
+            time.sleep(PAUSE_TIME)
+            buttons = driver.find_elements_by_class_name(CATEGORY_BUTTON_CLASS)
+            if button_index >= len(buttons):
+                break
+
+            category = click_category_button(driver, button_index)
+            time.sleep(PAUSE_TIME)
+            print("Crawling category [%s]..." % (category,))
+            information[category] = parse(subcrawl(driver))
+            button_index += 1
+
+    except BaseException as e:
+        traceback.print_exception(type(e), e, e.__traceback__)
+
+    finally:
+        # Write CSV
+        with open(BASE_DATA_PATH / "company_list.csv", "w") as file:
+            file.write("category,company,position,location\n")
+            for category in information:
+                file.writelines("%s,%s,%s,%s\n" % (
+                    category, info["company"], info["title"], info["location"]
+                ) for info in information[category])
+
+
+if __name__ == "__main__":
+    crawl_and_save(True)

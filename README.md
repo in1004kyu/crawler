@@ -8,3 +8,5 @@ This project gathers the job position data from Wanted for business purpose.
   - selenium (+ Chrome Driver)
   - beautifulsoup4
   - pandas
+  - autopep8 (Formatting)
+  - pylint (Linting)
