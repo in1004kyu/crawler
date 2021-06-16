@@ -92,6 +92,9 @@ def crawl_and_save(do_all: bool = True):
         traceback.print_exception(type(e), e, e.__traceback__)
 
     finally:
+        driver.close()
+        driver.quit()
+
         # Write CSV
         with open(BASE_DATA_PATH / "company_list.csv", "w") as file:
             file.write("category,company,position,location\n")
