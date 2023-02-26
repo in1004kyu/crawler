@@ -1,9 +1,1 @@
-# Environments
-.vscode/
-.direnv/
-
-# Web driver
-webdriver/
-
-# Crawled data
-crawled_data/
+사람인공고추출.csv

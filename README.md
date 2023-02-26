@@ -1,12 +1,11 @@
-# Wanted Crawler
+# Saramin Crawler
 
-This project gathers the job position data from Wanted for business purpose.
+사람인 공고 크롤링
 
 ## Dependencies
 
 - Python 3.8.3
-  - selenium (+ Chrome Driver)
-  - beautifulsoup4
-  - pandas
-  - autopep8 (Formatting)
-  - pylint (Linting)
+  - csv
+  - math
+  - requests
+  - BeautifulSoup
